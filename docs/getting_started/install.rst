@@ -1,82 +1,106 @@
-.. _install:
+from moviepy.editor import VideoFileClip, CompositeVideoClip, concatenate_videoclips, ImageClip
+from PIL import Image, ImageDraw, ImageFont
+import numpy as np
+import os
 
-Installation
-============
+# -----------------------------
+# 🔹 파일 경로 설정
+# -----------------------------
+video_path = "시랑 같이.mp4"   # 원본 영상 파일 경로
+elder_image_path = "A_digital_photograph_with_overlaid_Korean_text_fea.png"  # 마지막 노인 이미지
+output_path = "final_poem_typing_720p.mp4"  # 결과물 저장 경로
 
-Installation is done with ``pip``. If you don't have ``pip``, take a look at `how to install it <https://pip.pypa.io/en/stable/installation/>`_.
+# -----------------------------
+# 🔹 시 원문
+# -----------------------------
+poem_lines = [
+    "꿈",
+    "김주원",
+    "기분 좋은 날 이었다",
+    "모든 것이 완벽했다",
+    "소년은 행복했고",
+    "누구보다 들떠 있었다",
+    "그 따스한 향기 아래",
+    "다시는 돌아오지 못 할",
+    "터전 안에서 미소를 머금은채..",
+    "소년은 알고 있었다",
+    "이게 마지막이라는 것을",
+    "그리고 그 곳엔 어느덧",
+    "한 노인이 울고 있었다",
+]
 
-With ``pip`` installed, just type this in a terminal:
+# -----------------------------
+# 🔹 배경 영상 불러오기 & 720p로 리사이즈
+# -----------------------------
+base_clip = VideoFileClip(video_path).resize(height=720)
 
-.. code:: bash
+# 목표 시간 (20초)
+target_duration = 20
+line_duration = target_duration / len(poem_lines)
 
-    $ (sudo) pip install moviepy
+# -----------------------------
+# 🔹 폰트 설정 (고딕체)
+# -----------------------------
+# ⚠️ Windows라면: "C:/Windows/Fonts/malgun.ttf" 로 바꾸세요 (맑은 고딕)
+# ⚠️ Mac이라면: "/System/Library/Fonts/AppleSDGothicNeo.ttc"
+# ⚠️ Colab/Linux라면: "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"
+font_path = "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc"
+font_size = 40
+font = ImageFont.truetype(font_path, font_size)
 
-.. _install-binaries:
+# -----------------------------
+# 🔹 텍스트 이미지를 PIL로 생성하는 함수
+# -----------------------------
+def make_text_image(text, size, font):
+    img = Image.new("RGBA", size, (0, 0, 0, 0))  # 투명 배경
+    draw = ImageDraw.Draw(img)
+    w, h = draw.multiline_textsize(text, font=font, spacing=10)
+    draw.multiline_text(
+        ((size[0]-w)//2, (size[1]-h)//2),  # 중앙 정렬
+        text,
+        font=font,
+        fill=(255, 255, 255, 255),  # 흰색 글씨
+        spacing=10,
+        align="center"
+    )
+    return np.array(img)
 
-Installation of Additional Binaries
------------------------------------
+# -----------------------------
+# 🔹 한 줄씩 늘어나는 텍스트 (페이드인 효과)
+# -----------------------------
+text_clips = []
+current_text = ""
+for line in poem_lines:
+    current_text += line + "\n"
+    img = make_text_image(current_text, base_clip.size, font)
+    clip = (ImageClip(img)
+            .set_duration(line_duration)
+            .fadein(0.3))
+    text_clips.append(clip)
 
-MoviePy depends on the software ffmpeg_ for video reading and writing and on ``ffplay`` for video previewing.
+# 전체 자막 영상
+poem_text_clip = concatenate_videoclips(text_clips)
 
-You don't need to worry about ffmpeg_, as it should be automatically downloaded/installed by ImageIO during your first use of MoviePy (it takes a few seconds).
+# -----------------------------
+# 🔹 배경 + 자막 합성
+# -----------------------------
+poem_with_video = CompositeVideoClip([base_clip.set_duration(poem_text_clip.duration), poem_text_clip])
 
-You do need to worry about ``ffplay`` if you plan on using video/audio previewing. For these cases, make sure to have ``ffplay`` installed (it can usually be found alongside ``ffmpeg``) and ensure it is accessible to Python, or define a custom path (see below).
+# -----------------------------
+# 🔹 마지막 노인 이미지 (페이드인 후 3초 여운)
+# -----------------------------
+if os.path.exists(elder_image_path):
+    elder_img = (ImageClip(elder_image_path)
+                 .set_duration(3)
+                 .fadein(1)
+                 .resize(base_clip.size))
+    final_clip = concatenate_videoclips([poem_with_video, elder_img])
+else:
+    final_clip = poem_with_video
 
-Define Custom Paths to Binaries
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+# -----------------------------
+# 🔹 최종 영상 출력 (720p)
+# -----------------------------
+final_clip.write_videofile(output_path, codec="libx264", fps=24)
 
-If you want to use a specific version of FFmpeg and FFplay, you can do so using environment variables.
-
-There are a couple of environment variables used by MoviePy that allow you to configure custom paths to the external tools.
-
-To set up any of these variables, the easiest way is to do it in Python before importing objects from MoviePy. For example:
-
-.. code-block:: python
-
-    import os
-    os.environ["FFMPEG_BINARY"] = "/path/to/custom/ffmpeg"
-    os.environ["FFPLAY_BINARY"] = "/path/to/custom/ffplay"
-
-Alternatively, after installing the optional dependencies, you can create
-a ``.env`` file in your working directory that will be automatically read.
-For example
-
-.. code-block:: ini
-
-    FFMPEG_BINARY=/path/to/custom/ffmpeg
-    FFPLAY_BINARY=/path/to/custom/ffplay
-
-Environment Variables
----------------------
-
-There are two available environment variables for external binaries:
-
-``FFMPEG_BINARY``
-    Normally you can leave it at its default ('ffmpeg-imageio'), in which
-    case imageio will download the correct ffmpeg binary (on first use) and then always use that binary.
-
-    The second option is ``"auto-detect"``. In this case, ffmpeg will be whatever
-    binary is found on the computer: generally ``ffmpeg`` (on Linux/macOS) or ``ffmpeg.exe`` (on Windows).
-
-    Lastly, you can set it to use a binary at a specific location on your disk by specifying the exact path.
-
-``FFPLAY_BINARY``
-    The default is ``"auto-detect"``. MoviePy will try to find and use the installed ``ffplay`` binary.
-
-    You can set it to use a binary at a specific location on your disk. On Windows, this might look like:
-
-    .. code-block:: python
-
-        os.environ["FFPLAY_BINARY"] = r"C:\Program Files\ffmpeg\ffplay.exe"
-
-Verify if MoviePy Finds Binaries
---------------------------------
-
-To test if FFmpeg and FFplay are found by MoviePy, in a Python console, you can run:
-
-.. code:: python
-
-    from moviepy.config import check
-    check()
-
-.. _ffmpeg: https://www.ffmpeg.org/download.html
+print("✅ 완성! →", output_path)
